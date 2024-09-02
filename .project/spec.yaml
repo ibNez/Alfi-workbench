@@ -1,5 +1,5 @@
 specVersion: v2
-specMinorVersion: 1
+specMinorVersion: 2
 meta:
   name: Alfi
   image: project-alfi
@@ -44,7 +44,7 @@ environment:
       stop_command: jupyter lab stop 8888
       user_msg: ""
       logfile_path: ""
-      timeout_seconds: 0
+      timeout_seconds: 60
       icon_url: ""
       webapp_options:
         autolaunch: true
@@ -85,10 +85,42 @@ environment:
       name: ""
       target: ""
 execution:
-  apps: []
+  apps:
+  - name: Visual Studio Code
+    type: vs-code
+    class: native
+    start_command: ""
+    health_check_command: '[ \$(ps aux | grep ".vscode-server" | grep -v grep | wc
+      -l ) -gt 4 ] && [ \$(ps aux | grep "/.vscode-server/bin/.*/node .* net.createConnection"
+      | grep -v grep | wc -l) -gt 0 ]'
+    stop_command: ""
+    user_msg: ""
+    logfile_path: ""
+    timeout_seconds: 120
+    icon_url: ""
+  - name: Redis
+    type: custom
+    class: process
+    start_command: /project/apps/redis.sh start
+    health_check_command: /project/apps/redis.sh status
+    stop_command: /project/apps/redis.sh stop
+    user_msg: ""
+    logfile_path: ""
+    timeout_seconds: 60
+    icon_url: redis.io/favicon.ico
+  - name: Milvus DB
+    type: custom
+    class: process
+    start_command: /project/apps/milvus.sh start
+    health_check_command: /project/apps/milvus.sh status
+    stop_command: /project/apps/milvus.sh stop
+    user_msg: ""
+    logfile_path: ""
+    timeout_seconds: 60
+    icon_url: milvus.io/favicon-32x32.png
   resources:
     gpu:
-      requested: 1
+      requested: 0
     sharedMemoryMB: 1024
   secrets: []
   mounts:
@@ -96,3 +128,7 @@ execution:
     target: /project/
     description: Project directory
     options: rw
+  - type: host
+    target: /var/host-run/
+    description: Host's runtime files for Docker
+    options: ""

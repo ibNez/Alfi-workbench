@@ -1,1 +1,6 @@
-# apt packages to install should be listed one per line
+python3.10-venv
+curl
+jq
+less
+make
+redis-tools
