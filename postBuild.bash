@@ -30,6 +30,16 @@ EOM
 echo "workbench ALL=(ALL) NOPASSWD:ALL" | \
     sudo tee /etc/sudoers.d/00-workbench > /dev/null
 
+# Add NVidia's official GPG key:
+sudo curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+| sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+# Install Nvidia toolkit 
+sudo curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+| sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+| sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update
+
 
 # clean up
 sudo apt-get autoremove -y

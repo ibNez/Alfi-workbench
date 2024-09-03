@@ -14,9 +14,9 @@
 
 source  $(dirname $0)/functions
 
-NAME="redis"
-IMAGE="redis"
-TAG=$(config_lkp "REDIS_VERSION" "7")
+NAME="open-webui"
+IMAGE="ghcr.io/open-webui/open-webui"
+TAG="cuda"
 
 # This function is responsible for running creating a running the container
 # and its dependencies.
@@ -24,9 +24,12 @@ _docker_run() {
 	docker volume create $NAME > /dev/null
 	docker run \
 		--name $NAME \
-		--mount src=$NAME,target=/data \
-		$DOCKER_NETWORK $IMAGE:$TAG \
-        redis-server --save 20 1 --loglevel warning > /dev/null
+        -d \
+        --gpus all \
+        --add-host=host.docker.internal:host-gateway \
+        -v open-webui:/app/backend/data \
+        -p 3000:8080 \
+		$DOCKER_NETWORK $IMAGE:$TAG
 }
 
 # stop and remove the running container
@@ -38,10 +41,10 @@ _docker_stop() {
 # print the project's metadata
 _meta() {
 	cat <<-EOM
-		name: Redis
+		name: Open-WebUI
 		type: custom
 		class: process
-		icon_url: redis.io/favicon.ico
+		icon_url: ollama.com/public/icon-32x32.png
 		EOM
 }
 

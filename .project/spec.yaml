@@ -118,11 +118,33 @@ execution:
     logfile_path: ""
     timeout_seconds: 60
     icon_url: milvus.io/favicon-32x32.png
+  - name: Ollama
+    type: custom
+    class: process
+    start_command: /project/apps/ollama.sh start
+    health_check_command: /project/apps/ollama.sh status
+    stop_command: /project/apps/ollama.sh stop
+    user_msg: ""
+    logfile_path: ""
+    timeout_seconds: 60
+    icon_url: ollama.com/public/icon-32x32.png
+  - name: Open-WebUI
+    type: custom
+    class: process
+    start_command: /project/apps/open-webui.sh start
+    health_check_command: /project/apps/open-webui.sh status
+    stop_command: /project/apps/open-webui.sh stop
+    user_msg: ""
+    logfile_path: ""
+    timeout_seconds: 60
+    icon_url: github.com/open-webui/open-webui/blob/main/static/favicon.png
   resources:
     gpu:
       requested: 0
     sharedMemoryMB: 1024
-  secrets: []
+  secrets:
+  - variable: DISCORD_TOKEN
+    description: Discord API Access Token
   mounts:
   - type: project
     target: /project/

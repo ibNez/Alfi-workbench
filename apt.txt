@@ -4,3 +4,4 @@ jq
 less
 make
 redis-tools
+nvidia-container-toolkit

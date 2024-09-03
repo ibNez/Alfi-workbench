@@ -1,3 +1,13 @@
 jupyterlab>3.0
 redis==5.0.8
 pymilvus==2.4.4
+discord
+ollama
+torch
+pillow
+langchain==0.2.12
+langchain-milvus==0.1.3
+langchain-ollama
+langserve==0.2.2
+diffusers
+optimum-intel

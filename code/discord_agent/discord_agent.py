@@ -1,9 +1,11 @@
 import discord
 from discord.ext import commands
 import ollama
+from ollama import Client
 import os
 from dotenv import load_dotenv
 import json
+import redis
 
 from diffusers import DiffusionPipeline, StableVideoDiffusionPipeline
 from optimum.intel import OVStableDiffusionXLPipeline
@@ -15,6 +17,10 @@ from PIL import Image
 import requests
 
 load_dotenv()
+ollama_url = os.getenv('APP_OLLAMA_URL')
+ollama_client = Client(host=ollama_url)
+redis_client = redis.Redis(host='redis', port=6379, decode_responses=True)
+
 llmmodel="llama3"
 list_of_models = ["llama2", "llama3", "phi3", "mistral", "codegemma", "gemma"]
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -31,7 +37,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
-ollama.pull(llmmodel)
+ollama_client.pull(llmmodel)
 
 # Defining a function to create new messages
 def create_message(message, role):
@@ -42,6 +48,7 @@ def create_message(message, role):
 # Set Default State of Alfi
 chat_messages.append(create_message(system_message, 'system'))
 
+#Start up Discord Bot Server listener
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user.name} ({bot.user.id})')
@@ -51,15 +58,18 @@ async def on_ready():
     for guild in bot.guilds:
         print(f'Connected to server: {guild.name} (ID: {guild.id})')
 
+# This method allow us to ask Alfi to download and use another LLM
 @bot.command(name='AlfiUpdate', help='Used to update Alfi child LLM model')
 @commands.has_role('ENFORCER')
 async def update_model(ctx, error):
+    global ollama_client
+
     print(ctx.message.content.replace("!AlfiUpdate ", ""))
     command = ctx.message.content.replace("!AlfiUpdate ", "")
     if command in list_of_models:
         try:
             llmmodel = command
-            ollama.pull(llmmodel)
+            ollama_client.pull(llmmodel)
             await ctx.send("Model updated to: " + command)
             print("Model updated to: " + command)
         except Exception as e:
@@ -74,19 +84,20 @@ async def update_model(ctx, error):
 # perminate memory.  This will be saved to a file using pickle
 
 #TODO Create a function that can be called by discord command to force all subconsion memories to long team storage.
+# Use this message to unload current conversation into history > redis db
 @bot.command(name='Sleep', help="Prepare Alfi for sleeping and store memories to long term.")
 @commands.has_role('ENFORCER')
 async def sleep(ctx, paragraph, error):
     global subconscious
+    global ollama_url
     
     for user in subconscious:
         user_memories = {}
         chat_messages = []
         # Read memories from file if they exist for this user.
-        try:
-            with open(user, 'r') as file:
-                user_memories = json.load(file)
-        except:
+        if redis_client.exists(user) == 1:
+            user_memories = redis_client.exists(user)
+        else:
             print("No memories found for current user.")
 
         chat_messages = subconscious[user]
@@ -100,7 +111,7 @@ async def sleep(ctx, paragraph, error):
 
         chat_messages.append(create_message('Can you summarize all our conversation keeping track of who said what?', 'user'))
         print("Asking Alfi for a Summary of current memory")
-        stream = ollama.chat(
+        stream = ollama_client.chat(
             model=llmmodel,
             messages = chat_messages,
             options = {
@@ -123,9 +134,12 @@ async def sleep(ctx, paragraph, error):
             user_memories[user].append(create_message(paragraph, 'assistant'))
         else:
             user_memories[user] = [create_message(paragraph, 'assistant')]
-        print("Saving Users Memories to file.")
-        with open(user, 'w') as file:
-            json.dump(user_memories, file)
+        print("Saving Users Memories to Redis.")
+        print("Chat Messages: " + str(chat_messages))
+        print("UserID: " + user)
+        redis_client.hset(user, mapping={
+            'user_memories': user_memories,
+        })
         subconscious[user] = []
 
 
@@ -244,6 +258,7 @@ async def on_message(self, message):
 @commands.has_role('ENFORCER')
 async def on_message(ctx, paragraph, error):
     global subconscious
+
     chat_messages = []
     memory = {}
     user_memories = {}
@@ -277,7 +292,7 @@ async def on_message(ctx, paragraph, error):
     message_to_send = ctx.message.content.replace("!Alfi ", "") 
     chat_messages.append(create_message(message_to_send, 'user'))
     print("Current Change Messages: "+str(chat_messages))
-    stream = ollama.chat(
+    stream = ollama_client.chat(
         model=llmmodel,
         messages = chat_messages,
         options = {
@@ -318,7 +333,7 @@ async def on_message(ctx, paragraph, error):
     if len(subconscious) > 100:
         chat_messages.append(create_message('Can you summarize all our conversation keeping track of who said what?', 'user'))
         print("Current Chat Messages: "+str(chat_messages))
-        stream = ollama.chat(
+        stream = ollama_client.chat(
             model=llmmodel,
             messages = chat_messages,
             options = {
