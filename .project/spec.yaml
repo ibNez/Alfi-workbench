@@ -155,6 +155,16 @@ execution:
       proxy:
         trim_prefix: false
       url: http://localhost:8080/
+  - name: Tortoise-tts
+    type: custom
+    class: process
+    start_command: /project/apps/tortoise-tts.sh start
+    health_check_command: /project/apps/tortoise-tts.sh status
+    stop_command: /project/apps/tortoise-tts.sh stop
+    user_msg: ""
+    logfile_path: ""
+    timeout_seconds: 60
+    icon_url: ""
   resources:
     gpu:
       requested: 0

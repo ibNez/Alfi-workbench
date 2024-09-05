@@ -41,6 +41,14 @@ sudo curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-c
 sudo apt-get update
 
 
+# tortoise-tts 
+
+#cd /project/code/
+#sudo git clone https://github.com/neonbjb/tortoise-tts.git
+#cd tortoise-tts
+#sudo chown -R workbench:workbench .
+#docker build . -t tts
+
 # clean up
 sudo apt-get autoremove -y
 sudo rm -rf /var/cache/apt
