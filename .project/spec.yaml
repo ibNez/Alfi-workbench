@@ -138,6 +138,23 @@ execution:
     logfile_path: ""
     timeout_seconds: 60
     icon_url: github.com/open-webui/open-webui/blob/main/static/favicon.png
+  - name: Discord Agent
+    type: custom
+    class: webapp
+    start_command: cd /project/code/discord_agent && PROXY_PREFIX=$PROXY_PREFIX python3
+      discord_agent.py
+    health_check_command: curl -f "http://localhost:8080/"
+    stop_command: pkill -f '^python3 discord_agent.py'
+    user_msg: ""
+    logfile_path: ""
+    timeout_seconds: 60
+    icon_url: ""
+    webapp_options:
+      autolaunch: true
+      port: "8080"
+      proxy:
+        trim_prefix: false
+      url: http://localhost:8080/
   resources:
     gpu:
       requested: 0

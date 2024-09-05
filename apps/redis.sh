@@ -25,6 +25,7 @@ _docker_run() {
 	docker run \
 		--name $NAME \
 		--mount src=$NAME,target=/data \
+		--publish 6379:6379 \
 		$DOCKER_NETWORK $IMAGE:$TAG \
         redis-server --save 20 1 --loglevel warning > /dev/null
 }

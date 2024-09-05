@@ -1,3 +1,15 @@
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import discord
 from discord.ext import commands
 import ollama
@@ -16,6 +28,8 @@ import gc
 from PIL import Image
 import requests
 
+import copy
+
 load_dotenv()
 ollama_url = os.getenv('APP_OLLAMA_URL')
 ollama_client = Client(host=ollama_url)
@@ -25,10 +39,10 @@ llmmodel="llama3"
 list_of_models = ["llama2", "llama3", "phi3", "mistral", "codegemma", "gemma"]
 TOKEN = os.getenv('DISCORD_TOKEN')
 chat_messages = []
-system_message="Response like you are pretending you are a human named Alfi. You may never mention you are pretending or that you are an AI. Format your response using Markdown text format."
+system_message="Your name is Alfi. You are a helpful AI assistant. You do your best to be honest and use creditable information. If you do not know something you say you do not know."
 
-subconscious = {}  # Active Messages In Memory
-subconscious['username'] = chat_messages
+conscious_thoughts = {}  # Active Messages In Memory
+conscious_thoughts['username'] = chat_messages
 
 memories = []
 long_term_memory = {}
@@ -88,62 +102,71 @@ async def update_model(ctx, error):
 @bot.command(name='Sleep', help="Prepare Alfi for sleeping and store memories to long term.")
 @commands.has_role('ENFORCER')
 async def sleep(ctx, paragraph, error):
-    global subconscious
+    global conscious_thoughts
     global ollama_url
+
+    user = ctx.author.name  
+    user_memories = {}
+    chat_messages = []
     
-    for user in subconscious:
-        user_memories = {}
-        chat_messages = []
-        # Read memories from file if they exist for this user.
-        if redis_client.exists(user) == 1:
-            user_memories = redis_client.exists(user)
+    # Read memories from file if they exist for this user.
+    if redis_client.exists(user) == 1:
+        retrieved_value=redis_client.hgetall(user)
+
+        user_memories = json.loads(retrieved_value['json'])
+    else:
+        print("No memories found for current user.")
+
+    chat_messages = conscious_thoughts[user]
+    if len(chat_messages) <= 1:
+        return
+
+    if user_memories:
+        chat_messages = [i for i in chat_messages if i not in user_memories[user]]
+
+    #TODO May need to remove old memorys compare to current memories and remove from list first.?
+
+    chat_messages.append(create_message('Can you summarize all our conversation keeping track of who said what?', 'user'))
+    print("Asking Alfi for a Summary of current memory")
+    stream = ollama_client.chat(
+        model=llmmodel,
+        messages = chat_messages,
+        options = {
+        #'temperature': 1.5, # very creative
+        'temperature': 0 # very conservative (good for coding and correct syntax)
+        },
+        stream=True
+    )
+    sentence = ''
+    paragraph = ''
+    for chunk in stream:    
+        if '\n' in chunk['message']['content']:
+            paragraph = paragraph + sentence + '\n'
+            sentence = ''
         else:
-            print("No memories found for current user.")
+            sentence = sentence + chunk['message']['content']
+    paragraph = paragraph + sentence
+    
+    if user_memories:
+        user_memories[user].append(create_message(paragraph, 'assistant'))
+    else:
+        user_memories[user] = [create_message(paragraph, 'assistant')]
+    print("Saving Users Memories to Redis.")
+    print("Chat Messages: " + str(chat_messages))
+    print("UserID: " + user)
+    json_string = json.dumps(user_memories)
 
-        chat_messages = subconscious[user]
-        if len(chat_messages) <= 1:
-            continue
+    redis_client.hset(user, mapping={
+        'json': json_string,
+    })
 
-        if user_memories:
-            chat_messages = [i for i in chat_messages if i not in user_memories[user]]
+    #with open(ctx.author.name, 'w') as file:
+    #    json.dump(user_memories, file)
+    #subconscious[ctx.author.name] = []
+    #with open(user, 'w') as file:
+    #    json.dump(user_memories, file)
+    conscious_thoughts[user] = []
 
-        #TODO May need to remove old memorys compare to current memories and remove from list first.?
-
-        chat_messages.append(create_message('Can you summarize all our conversation keeping track of who said what?', 'user'))
-        print("Asking Alfi for a Summary of current memory")
-        stream = ollama_client.chat(
-            model=llmmodel,
-            messages = chat_messages,
-            options = {
-            #'temperature': 1.5, # very creative
-            'temperature': 0 # very conservative (good for coding and correct syntax)
-            },
-            stream=True
-        )
-        sentence = ''
-        paragraph = ''
-        for chunk in stream:    
-            if '\n' in chunk['message']['content']:
-                paragraph = paragraph + sentence + '\n'
-                sentence = ''
-            else:
-                sentence = sentence + chunk['message']['content']
-        paragraph = paragraph + sentence
-        
-        if user_memories:
-            user_memories[user].append(create_message(paragraph, 'assistant'))
-        else:
-            user_memories[user] = [create_message(paragraph, 'assistant')]
-        print("Saving Users Memories to Redis.")
-        print("Chat Messages: " + str(chat_messages))
-        print("UserID: " + user)
-        redis_client.hset(user, mapping={
-            'user_memories': user_memories,
-        })
-        subconscious[user] = []
-
-
-    return
 
 @bot.event
 async def on_reaction_add(reaction, user):
@@ -257,41 +280,65 @@ async def on_message(self, message):
 @bot.command(name='Alfi', help="Command used to talk to AI Alfi.")
 @commands.has_role('ENFORCER')
 async def on_message(ctx, paragraph, error):
-    global subconscious
-
+    # conscious_thoughts type = dict = Current log of user interactions stored in RAM
+    # structure: 
+    #   
+    # short_term_memory type = dict = History of user interactions Stored in Redis DB
+    # structure:
+    #   {'json': json.dump(chat_messages)}
+    global conscious_thoughts
     chat_messages = []
-    memory = {}
-    user_memories = {}
+    short_term_memory = {}
+    user = ctx.author.name
 
-    # Read memories from file if they exist for this user.
-    try:
-        with open(ctx.author.name, 'r') as file:
-            user_memories = json.load(file)
-    except:
+    # Read memories from file if they exist for this user. 
+    if redis_client.exists(user) == 1:
+        
+        retrieved_value=redis_client.hgetall(user)
+
+        short_term_memory = json.loads(retrieved_value['json'])
+        #with open(ctx.author.name, 'r') as file:
+        #    user_memories = json.load(file)
+    else:
         print("No memories found for current user.")
 
     # print(ctx.author.name)
     # print(ctx.message.content)
 
-    # Check to see if we have spoken with this user before.
-    if ctx.author.name in subconscious:
-        if user_memories:
-            print("These are the users memories: " + str(user_memories[ctx.author.name]))
-            chat_messages.extend(user_memories[ctx.author.name])
-        chat_messages.extend(subconscious[ctx.author.name])
+    # Merge conscious_thoughts and short_term_memory into chat_messages.
+    # Check to see if we have conversations stored in RAM(conscious_thoughts) conversations.
+    if ctx.author.name in conscious_thoughts:
+        print("User, " + ctx.author.name + ", has conscous thoughts stored in RAM.")
+        # Check to see if we have conversations stored in Redis(user_shorterm_memory). If there are we want them 
+        # to be first in the chat_messages variable.
+        if short_term_memory:
+            print("User, " + ctx.author.name + ", has shorterm memories stored in redis. Adding them to chat_messaages.")
+            chat_messages.extend(short_term_memory[ctx.author.name])
+            short_term_memory = {}
+        # Load up chat messages to be handed to the LLM
+        print("Adding conscious_thoughts to the chat messages after any prevous found shorterm memories.")
+        chat_messages.extend(conscious_thoughts[ctx.author.name])
     else:
-        # Setup a default convesational rules for all users
-        subconscious[ctx.author.name] = [create_message(system_message, 'system'),
-                                       create_message('My name is '+ ctx.author.name, 'user'),
-                                       create_message('Nice to meet you '+ ctx.author.name, 'assistant')]
-        chat_messages = subconscious[ctx.author.name]
-        if user_memories:
-            chat_messages.extend(user_memories[ctx.author.name])
-
-    # Form our conext for Alfi remove Alfi command from string.
-    message_to_send = ctx.message.content.replace("!Alfi ", "") 
+        # If there are no subconcious or memories we need to set a default. If there are memories we need to use them as they contain the default?  But for how long?
+        print("User, " + ctx.author.name + ", has no current conscous thoughts stored in RAM.")
+        if short_term_memory:
+            print("User, " + ctx.author.name + ", has shorterm memories stored in redis. Adding them to chat_messaages.")
+            chat_messages.extend(short_term_memory[ctx.author.name])
+            short_term_memory = {}
+            conscious_thoughts[ctx.author.name] = []
+        else:
+            # Setup a default convesational rules for all users and add to chat messages to be handed to the LLM
+            print("User, " + ctx.author.name + ", has never spoken with Alfi before. Creating default conversation parameters and creating chat_messages.")
+            conscious_thoughts[ctx.author.name] = [create_message(system_message, 'system'),
+                                        create_message('My name is '+ ctx.author.name, 'user'),
+                                        create_message('Nice to meet you '+ ctx.author.name + ". My Name is Alfi.", 'assistant')]
+            chat_messages = copy.deepcopy(conscious_thoughts[ctx.author.name])
+        
+    # Format our context for Alfi and remove !Alfi command from string.
+    message_to_send = ctx.message.content.replace("!Alfi ", "")
+    print("User, " + ctx.author.name + ", adding new user text to chat_messages./n Submitting to LLM...") 
     chat_messages.append(create_message(message_to_send, 'user'))
-    print("Current Change Messages: "+str(chat_messages))
+    conscious_thoughts[ctx.author.name].append(create_message(message_to_send, 'user'))
     stream = ollama_client.chat(
         model=llmmodel,
         messages = chat_messages,
@@ -300,64 +347,65 @@ async def on_message(ctx, paragraph, error):
         'temperature': 0 # very conservative (good for coding and correct syntax)
         },
         stream=True
-    
     )
+
     sentence = ''
     paragraph = ''
-    for chunk in stream:
-        
-        print(chunk['message'])
+    llm_response = ''
 
+    print("Reading response from stream.")
+    for chunk in stream:
+        llm_response = llm_response + chunk['message']['content']
+        print("Message in Chunk of stream: " + str(chunk['message']))
         if '\n' in chunk['message']['content']:
-            print("Created Sentence: "+sentence)
-            paragraph = paragraph + sentence + '\n'
-            print("Paragraph: "+paragraph)
+            print("New Line Symbol found in content of message chunk: " + chunk['message']['content'])
+            if sentence != '':
+                # Adding new sentence to Paragraph
+                paragraph = paragraph + sentence + chunk['message']['content'].replace("\n", "") + '\n'
+                sentence = ''
+            # Check if paragraph is too big and need to be sent in parts.
             if len(paragraph) >= 1500:
-                print("Paragraph snippet being sent: "+paragraph)
+                print("Paragraph greater than 1500 character.\n Sending snippet of response: " + paragraph)
                 await ctx.send(paragraph)
-                chat_messages.append(create_message(paragraph, 'assistant'))
-                subconscious[ctx.author.name] = chat_messages
                 paragraph = ''
-            sentence = ''
+                sentence = ''
         else:
+            # No new line found. adding chunk to sentence.
             sentence = sentence + chunk['message']['content']
+    # Add the remaining sentence to the paragraph
     paragraph = paragraph + sentence
+    del sentence
+
+    # Check our Paragraph response has unsent value and send it back to Discord.
     if len(paragraph) >= 1:
-        print("Paragraph being sent: "+paragraph)
+        print("Paragraph being sent: " + paragraph)
         await ctx.send(paragraph)
-        chat_messages.append(create_message(paragraph, 'assistant'))
-        subconscious[ctx.author.name] = chat_messages
+        del paragraph
+        del chat_messages
+        # Append new response to concious thoughts
+        conscious_thoughts[ctx.author.name].append(create_message(llm_response, 'assistant'))
     #print(str(subconscious))
 
-    # Save Memories to longterm storage
-    if len(subconscious) > 100:
-        chat_messages.append(create_message('Can you summarize all our conversation keeping track of who said what?', 'user'))
-        print("Current Chat Messages: "+str(chat_messages))
-        stream = ollama_client.chat(
-            model=llmmodel,
-            messages = chat_messages,
-            options = {
-            #'temperature': 1.5, # very creative
-            'temperature': 0 # very conservative (good for coding and correct syntax)
-            },
-            stream=True
-        )
-
-        for chunk in stream:    
-            if '\n' in chunk['message']['content']:
-                paragraph = paragraph + sentence + '\n'
-                sentence = ''
-            else:
-                sentence = sentence + chunk['message']['content']
-        paragraph = paragraph + sentence
+    # Save Memories to short_term_memory storage in RDS
+    if len(conscious_thoughts[ctx.author.name]) > 10:
         
-        if user_memories:
-            user_memories[ctx.author.name].append(create_message(paragraph, 'assistant'))
+        if short_term_memory:
+            # Persist Conversation to Memory stored in Redis
+            short_term_memory[ctx.author.name].append(conscious_thoughts[ctx.author.name])
         else:
-            user_memories[ctx.author.name] = [create_message(paragraph, 'assistant')]
-        print("Saving Users Memories to file.")
-        with open(ctx.author.name, 'w') as file:
-            json.dump(user_memories, file)
-        subconscious[ctx.author.name] = []
+            # Expand the Conversation Memory stored in Redis
+            short_term_memory[ctx.author.name] = conscious_thoughts[ctx.author.name]
+        
+        print("Saving Users Memories to redis.")
+
+        json_string = json.dumps(short_term_memory)
+
+        redis_client.hset(user, mapping={
+            'json': json_string,
+        })
+
+        #with open(ctx.author.name, 'w') as file:
+        #    json.dump(user_memories, file)
+        conscious_thoughts.pop(ctx.author.name, None)
 
 bot.run(TOKEN)

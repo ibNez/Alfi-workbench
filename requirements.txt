@@ -11,3 +11,5 @@ langchain-ollama
 langserve==0.2.2
 diffusers
 optimum-intel
+psutil
+Flask
