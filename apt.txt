@@ -5,3 +5,8 @@ less
 make
 redis-tools
 nvidia-container-toolkit
+espeak
+ffmpeg
+libespeak1
+build-essential
+libsndfile1

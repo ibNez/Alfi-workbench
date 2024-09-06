@@ -13,3 +13,10 @@ diffusers
 optimum-intel
 psutil
 Flask
+pyttsx3
+pynacl
+asyncio
+torchvision
+torchaudio
+nemo_toolkit[all]
+Cython

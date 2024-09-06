@@ -12,25 +12,33 @@
 
 import discord
 from discord.ext import commands
+
 import ollama
 from ollama import Client
+
 import os
+import copy
 from dotenv import load_dotenv
 import json
+
 import redis
 
 from diffusers import DiffusionPipeline, StableVideoDiffusionPipeline
 from optimum.intel import OVStableDiffusionXLPipeline
 from diffusers.utils import export_to_video
+
 import torch
 import gc
 
 from PIL import Image
 import requests
 
-import copy
+import pyttsx3
 
 load_dotenv()
+GUILD_ID = 941395439708667915
+CHANNEL_ID = 997679589025390622
+
 ollama_url = os.getenv('APP_OLLAMA_URL')
 ollama_client = Client(host=ollama_url)
 redis_client = redis.Redis(host='redis', port=6379, decode_responses=True)
@@ -49,9 +57,16 @@ long_term_memory = {}
 
 intents = discord.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix='!', intents=intents)
+engine = pyttsx3.init()
 ollama_client.pull(llmmodel)
+
+# Create audio output file.
+def text_to_speech(text, filename):
+    engine.setProperty('voice', 'slt')  # Use the Salli voice
+    engine.setProperty('rate', 150)
+    engine.save_to_file(text, filename)
+    engine.runAndWait()
 
 # Defining a function to create new messages
 def create_message(message, role):
@@ -169,6 +184,7 @@ async def sleep(ctx, paragraph, error):
 
 
 @bot.event
+@commands.has_role('ENFORCER')
 async def on_reaction_add(reaction, user):
     # Check if the reaction is the desired emoji 
     if str(reaction.emoji) == "🖼️":
@@ -275,7 +291,16 @@ async def on_message(self, message):
     e.set_image(url=image)
     await ctx.send(embed=e)
 
-
+@bot.command(name='AlfiStop', help="Interupt Alfi talking.")
+@commands.has_role('ENFORCER')
+async def alfistop(ctx, error):
+    if ctx.voice_client:
+        ctx.voice_client.stop()
+        await ctx.voice_client.disconnect()
+        #engine.stop()
+        await ctx.send("Stopped speaking and disconnected from the voice channel.")
+    else:
+        await ctx.send("I'm not connected to a voice channel.")
 
 @bot.command(name='Alfi', help="Command used to talk to AI Alfi.")
 @commands.has_role('ENFORCER')
@@ -290,6 +315,7 @@ async def on_message(ctx, paragraph, error):
     chat_messages = []
     short_term_memory = {}
     user = ctx.author.name
+    filename = user+".wav"
 
     # Read memories from file if they exist for this user. 
     if redis_client.exists(user) == 1:
@@ -380,10 +406,26 @@ async def on_message(ctx, paragraph, error):
     if len(paragraph) >= 1:
         print("Paragraph being sent: " + paragraph)
         await ctx.send(paragraph)
+        
         del paragraph
         del chat_messages
         # Append new response to concious thoughts
-        conscious_thoughts[ctx.author.name].append(create_message(llm_response, 'assistant'))
+    text_to_speech(llm_response, filename)
+    conscious_thoughts[ctx.author.name].append(create_message(llm_response, 'assistant'))
+    if ctx.author.voice:
+        if ctx.author.voice:
+            channel = ctx.author.voice.channel
+            voice_client = await channel.connect()
+        else:
+            await ctx.send("You are not connected to a voice channel.")
+            return
+        source = discord.FFmpegPCMAudio(filename)
+        voice_client.play(source)
+        while voice_client.is_playing():
+            await discord.utils.sleep(1)
+        await voice_client.disconnect()
+    else:
+        await ctx.send("You are not connected to a voice channel.")
     #print(str(subconscious))
 
     # Save Memories to short_term_memory storage in RDS
