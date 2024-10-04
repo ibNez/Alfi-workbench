@@ -28,6 +28,7 @@ _docker_run() {
 		-e ETCD_USE_EMBED=true \
 		-e ETCD_DATA_DIR=/var/lib/milvus/etcd \
 		-e COMMON_STORAGETYPE=local \
+		-p 19530:19530 \
 		--mount src=$NAME,target=/var/lib/milvus \
 		--health-cmd="curl -f http://localhost:9091/healthz" \
 		--health-interval=30s \

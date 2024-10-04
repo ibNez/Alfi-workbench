@@ -36,6 +36,7 @@ import requests
 import pyttsx3
 
 load_dotenv()
+TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD_ID = 941395439708667915
 CHANNEL_ID = 997679589025390622
 
@@ -45,7 +46,7 @@ redis_client = redis.Redis(host='redis', port=6379, decode_responses=True)
 
 llmmodel="llama3"
 list_of_models = ["llama2", "llama3", "phi3", "mistral", "codegemma", "gemma"]
-TOKEN = os.getenv('DISCORD_TOKEN')
+
 chat_messages = []
 system_message="Your name is Alfi. You are a helpful AI assistant. You do your best to be honest and use creditable information. If you do not know something you say you do not know."
 
@@ -63,8 +64,12 @@ ollama_client.pull(llmmodel)
 
 # Create audio output file.
 def text_to_speech(text, filename):
-    engine.setProperty('voice', 'slt')  # Use the Salli voice
-    engine.setProperty('rate', 150)
+    voices = engine.getProperty('voices')
+    engine.setProperty('voice', voices[1].id)
+    rate = engine.getProperty('rate')
+    engine.setProperty('rate', rate-150)
+    volume = engine.getProperty('volume')
+    engine.setProperty('volume', volume+0.50)
     engine.save_to_file(text, filename)
     engine.runAndWait()
 
@@ -423,7 +428,9 @@ async def on_message(ctx, paragraph, error):
         voice_client.play(source)
         while voice_client.is_playing():
             await discord.utils.sleep(1)
+        ctx.voice_client.stop()
         await voice_client.disconnect()
+        
     else:
         await ctx.send("You are not connected to a voice channel.")
     #print(str(subconscious))

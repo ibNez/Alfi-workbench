@@ -18,5 +18,3 @@ pynacl
 asyncio
 torchvision
 torchaudio
-nemo_toolkit[all]
-Cython
